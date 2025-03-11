@@ -4,6 +4,7 @@ import time
 import os
 import uuid
 import sys
+import json
 
 # 기본 템플릿 정의 (코드 상단에 분리)
 DEFAULT_ANALYSIS_TEMPLATE = """다음 기획서를 분석하고, 사업계획서 '문제 인식(Problem)' 섹션 작성에 필요하지만 누락된 정보를 찾아주세요:
@@ -53,6 +54,19 @@ DEFAULT_GENERATION_TEMPLATE = """다음 사업 아이디어 기획 메모를 바
 - 첫 번째 문제점
 - 두 번째 문제점"""
 
+# 섹션 설정 로드
+def load_section_config():
+    """섹션 설정 파일 로드"""
+    config_path = os.path.join("data", "section_config.json")
+    try:
+        with open(config_path, 'r', encoding='utf-8') as file:
+            return json.load(file)
+    except FileNotFoundError:
+        print(f"경고: 섹션 설정 파일 '{config_path}'을(를) 찾을 수 없습니다.")
+        return {"sections": []}
+    except Exception as e:
+        print(f"섹션 설정 파일 읽기 오류: {str(e)}")
+        return {"sections": []}
 
 def load_prompt_template(file_path):
     """프롬프트 템플릿 파일 읽기"""
@@ -89,108 +103,75 @@ def format_prompt_safely(template, **kwargs):
         print(f"템플릿 형식 오류: {str(e)}")
         return template  # 원본 템플릿 반환
 
-def generate_problem_analysis_prompt(business_idea):
-    """분석 프롬프트 생성 및 클립보드에 복사"""
-    # 프롬프트 템플릿 로드
-    template_path = os.path.join("data", "prompts", "analysis_prompt.txt")
+def generate_analysis_prompt(section_id, business_idea):
+    """섹션 분석 프롬프트 생성"""
+    config = load_section_config()
+    section = next((s for s in config["sections"] if s["id"] == section_id), None)
     
-    # 기존 경로도 확인 (이전 버전과의 호환성)
-    if not os.path.exists(template_path):
-        legacy_path = os.path.join("prompts", "analysis_prompt.txt")
-        if os.path.exists(legacy_path):
-            template_path = legacy_path
-            print(f"알림: 레거시 경로에서 프롬프트 템플릿을 로드합니다: {legacy_path}")
+    if not section:
+        print(f"경고: '{section_id}' 섹션을 설정에서 찾을 수 없습니다.")
+        return None
     
-    template = load_prompt_template(template_path)
+    # 분석 프롬프트 템플릿 로드
+    analysis_prompt_path = section.get("analysis_prompt")
+    if not analysis_prompt_path:
+        print(f"경고: '{section_id}' 섹션에 분석 프롬프트 경로가 지정되지 않았습니다.")
+        return None
     
+    template = load_prompt_template(analysis_prompt_path)
     if not template:
-        print("프롬프트 파일이 없습니다. 기본 템플릿을 생성하고 계속 진행합니다.")
-        # 기본 템플릿 사용 - 상단에 정의된 변수 활용
-        template = DEFAULT_ANALYSIS_TEMPLATE
-        
-        # 기본 템플릿 파일 생성
-        try:
-            with open(template_path, 'w', encoding='utf-8') as f:
-                f.write(template)
-            print(f"'{template_path}' 파일이 생성되었습니다.")
-        except Exception as e:
-            print(f"기본 템플릿 파일 생성 오류: {str(e)}")
-
-    # 안전하게 변수 삽입
-    prompt = format_prompt_safely(template, business_idea=business_idea)
+        print(f"경고: '{analysis_prompt_path}' 분석 프롬프트 템플릿을 로드할 수 없습니다.")
+        return None
+    
+    # 프롬프트 생성
+    prompt = template.format(business_idea=business_idea)
     
     # 클립보드에 복사
-    pyperclip.copy(prompt)
-    print("\n===== 분석 프롬프트가 클립보드에 복사되었습니다 =====")
-    print("1. Cursor AI에 붙여넣기 후 실행해주세요")
-    print("2. 응답이 생성되면 복사 버튼을 클릭하세요")
-    print("3. 복사가 완료되면 Enter를 눌러 계속하세요...")
-    input()  # 사용자 입력 대기
+    try:
+        pyperclip.copy(prompt)
+        print(f"프롬프트가 클립보드에 복사되었습니다.")
+    except:
+        print("클립보드 복사에 실패했습니다.")
     
-    # 클립보드에서 응답 읽기
-    analysis = pyperclip.paste()
-    print(f"\n분석 결과를 성공적으로 가져왔습니다. (길이: {len(analysis)} 자)")
+    return prompt
+
+def generate_section_prompt(section_id, business_idea, analysis):
+    """섹션 생성 프롬프트 생성"""
+    config = load_section_config()
+    section = next((s for s in config["sections"] if s["id"] == section_id), None)
     
-    # 임시 ID 생성하여 파일명 충돌 방지
-    temp_id = str(uuid.uuid4())[:8]
+    if not section:
+        print(f"경고: '{section_id}' 섹션을 설정에서 찾을 수 없습니다.")
+        return None
     
-    # 임시 파일로 저장
-    temp_path = os.path.join("output", f"analysis_result_{temp_id}.txt")
-    os.makedirs(os.path.dirname(temp_path), exist_ok=True)
-    with open(temp_path, "w", encoding="utf-8") as f:
-        f.write(analysis)
+    # 생성 프롬프트 템플릿 로드
+    generation_prompt_path = section.get("generation_prompt")
+    if not generation_prompt_path:
+        print(f"경고: '{section_id}' 섹션에 생성 프롬프트 경로가 지정되지 않았습니다.")
+        return None
     
-    return analysis
+    template = load_prompt_template(generation_prompt_path)
+    if not template:
+        print(f"경고: '{generation_prompt_path}' 생성 프롬프트 템플릿을 로드할 수 없습니다.")
+        return None
+    
+    # 프롬프트 생성
+    prompt = template.format(business_idea=business_idea, analysis=analysis)
+    
+    # 클립보드에 복사
+    try:
+        pyperclip.copy(prompt)
+        print(f"프롬프트가 클립보드에 복사되었습니다.")
+    except:
+        print("클립보드 복사에 실패했습니다.")
+    
+    return prompt
+
+# 레거시 호환성 유지를 위한 함수
+def generate_problem_analysis_prompt(business_idea):
+    """문제 인식 섹션의 분석 프롬프트 생성 (레거시 호환성)"""
+    return generate_analysis_prompt("problem", business_idea)
 
 def generate_problem_section_prompt(business_idea, analysis):
-    """섹션 작성 프롬프트 생성 및 클립보드에 복사"""
-    # 프롬프트 템플릿 로드
-    template_path = os.path.join("data", "prompts", "generation_prompt.txt")
-    
-    # 기존 경로도 확인 (이전 버전과의 호환성)
-    if not os.path.exists(template_path):
-        legacy_path = os.path.join("prompts", "generation_prompt.txt")
-        if os.path.exists(legacy_path):
-            template_path = legacy_path
-            print(f"알림: 레거시 경로에서 프롬프트 템플릿을 로드합니다: {legacy_path}")
-    
-    template = load_prompt_template(template_path)
-    
-    if not template:
-        print("프롬프트 파일이 없습니다. 기본 템플릿을 생성하고 계속 진행합니다.")
-        # 기본 템플릿 사용 - 상단에 정의된 변수 활용
-        template = DEFAULT_GENERATION_TEMPLATE
-        
-        # 기본 템플릿 파일 생성
-        try:
-            with open(template_path, 'w', encoding='utf-8') as f:
-                f.write(template)
-            print(f"'{template_path}' 파일이 생성되었습니다.")
-        except Exception as e:
-            print(f"기본 템플릿 파일 생성 오류: {str(e)}")
-    
-    # 안전하게 변수 삽입
-    prompt = format_prompt_safely(template, business_idea=business_idea, analysis=analysis)
-    
-    # 클립보드에 복사
-    pyperclip.copy(prompt)
-    print("\n===== 섹션 작성 프롬프트가 클립보드에 복사되었습니다 =====")
-    print("1. Cursor AI에 붙여넣기 후 실행해주세요")
-    print("2. 응답이 생성되면 복사 버튼을 클릭하세요")
-    print("3. 복사가 완료되면 Enter를 눌러 계속하세요...")
-    input()  # 사용자 입력 대기
-    
-    # 클립보드에서 응답 읽기
-    section = pyperclip.paste()
-    print(f"\n섹션 작성 결과를 성공적으로 가져왔습니다. (길이: {len(section)} 자)")
-    
-    # 임시 ID 생성
-    temp_id = str(uuid.uuid4())[:8]
-    
-    # 파일로 저장
-    temp_path = os.path.join("output", f"problem_section_{temp_id}.txt")
-    os.makedirs(os.path.dirname(temp_path), exist_ok=True)
-    with open(temp_path, "w", encoding="utf-8") as f:
-        f.write(section)
-    
-    return section 
+    """문제 인식 섹션의 생성 프롬프트 생성 (레거시 호환성)"""
+    return generate_section_prompt("problem", business_idea, analysis) 

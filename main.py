@@ -1,18 +1,20 @@
 import os
 import sys
 import glob
+import json
 
 # utils 폴더 및 core 폴더를 import 경로에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(current_dir)
 
 # 새로운 구조의 모듈 import
-from utils.prompt_utils import generate_problem_analysis_prompt, generate_problem_section_prompt
+from utils.prompt_utils import generate_analysis_prompt, generate_section_prompt
+from utils.prompt_utils import load_section_config
 from utils.pdf_utils import merge_docx_files
 from core.business_plan import BusinessPlanService
 from core.document_manager import DocumentManager
 
-def process_single_proposal(file_path, output_dir):
+def process_single_proposal(file_path, output_dir, selected_sections):
     """단일 기획서 처리"""
     file_name = os.path.basename(file_path)
     file_base_name = os.path.splitext(file_name)[0]
@@ -34,22 +36,71 @@ def process_single_proposal(file_path, output_dir):
     # 사업계획서 객체 생성
     business_plan = bp_service.create_plan(f"{file_base_name}의 사업계획서", business_idea)
     
-    # 1단계: 분석 프롬프트 생성 및 결과 가져오기
-    print(f"\n===== 1단계: 기획서 분석 - {file_name} =====")
-    analysis = generate_problem_analysis_prompt(business_idea)
+    # 섹션 설정 로드
+    section_config = load_section_config()
+    sections = section_config.get("sections", [])
     
-    # 2단계: 섹션 작성 프롬프트 생성 및 결과 가져오기
-    print(f"\n===== 2단계: 문제 인식 섹션 작성 - {file_name} =====")
-    problem_section = generate_problem_section_prompt(business_idea, analysis)
+    # 선택된 섹션 목록 또는 모든 섹션
+    sections_to_process = [s for s in sections if s["id"] in selected_sections or not selected_sections]
     
-    # 사업계획서 객체에 섹션 내용 추가
-    business_plan.add_section_content("problem", problem_section)
+    if not sections_to_process:
+        print("처리할 섹션이 없습니다.")
+        return None
+    
+    # 선택된 모든 섹션 처리
+    for section in sections_to_process:
+        section_id = section["id"]
+        section_title = section["title"]
+        
+        print(f"\n===== {section_title} 섹션 처리 중 =====")
+        
+        # 1단계: 분석 프롬프트 생성 및 결과 가져오기
+        print(f"\n1단계: 기획서 분석 - {section_title}")
+        analysis = generate_analysis_prompt(section_id, business_idea)
+        
+        if not analysis:
+            print(f"{section_id} 섹션 분석에 실패했습니다. 이 섹션은 건너뜁니다.")
+            continue
+            
+        print(f"\n분석 프롬프트가 클립보드에 복사되었습니다.")
+        print("1. Cursor AI에 붙여넣기 후 실행해주세요")
+        print("2. 응답이 생성되면 복사 버튼을 클릭하세요")
+        print("3. 복사가 완료되면 Enter를 눌러 계속하세요...")
+        input()  # 사용자 입력 대기
+        
+        analysis_result = input("분석 결과를 붙여넣으세요: ")
+        print(f"\n분석 결과를 성공적으로 가져왔습니다. (길이: {len(analysis_result)} 자)")
+        
+        # 2단계: 섹션 작성 프롬프트 생성 및 결과 가져오기
+        print(f"\n2단계: {section_title} 섹션 작성")
+        section_prompt = generate_section_prompt(section_id, business_idea, analysis_result)
+        
+        if not section_prompt:
+            print(f"{section_id} 섹션 생성에 실패했습니다. 이 섹션은 건너뜁니다.")
+            continue
+            
+        print(f"\n섹션 작성 프롬프트가 클립보드에 복사되었습니다.")
+        print("1. Cursor AI에 붙여넣기 후 실행해주세요")
+        print("2. 응답이 생성되면 복사 버튼을 클릭하세요")
+        print("3. 복사가 완료되면 Enter를 눌러 계속하세요...")
+        input()  # 사용자 입력 대기
+        
+        section_content = input("섹션 작성 결과를 붙여넣으세요: ")
+        print(f"\n섹션 작성 결과를 성공적으로 가져왔습니다. (길이: {len(section_content)} 자)")
+        
+        # 사업계획서 객체에 섹션 내용 추가
+        business_plan.add_section_content(section_id, section_content)
+    
+    # 모든 섹션이 처리된 후 결과 저장
+    if not business_plan.get_completed_sections():
+        print("처리된 섹션이 없습니다.")
+        return None
     
     # 3단계: 결과 저장
-    output_docx = os.path.join(output_dir, f"{file_base_name}_problem_section.docx")
+    output_docx = os.path.join(output_dir, f"{file_base_name}_business_plan.docx")
     
     # 문서 관리자를 통해 Word 문서 생성
-    doc_manager.create_document_from_sections(business_plan, f"{file_base_name}_problem_section.docx")
+    doc_manager.create_document_from_sections(business_plan, f"{file_base_name}_business_plan.docx")
     print(f"Word 문서가 생성되었습니다: {output_docx}")
     
     # PDF 템플릿이 있는 경우 PDF도 생성
@@ -69,14 +120,54 @@ def process_single_proposal(file_path, output_dir):
     
     return output_docx
 
+def select_sections():
+    """처리할 섹션 선택"""
+    section_config = load_section_config()
+    sections = section_config.get("sections", [])
+    
+    if not sections:
+        print("설정된 섹션이 없습니다.")
+        return []
+    
+    print("\n처리할 섹션을 선택하세요:")
+    for i, section in enumerate(sections, 1):
+        print(f"{i}. {section['title']} ({section['id']})")
+    print(f"{len(sections) + 1}. 모든 섹션")
+    
+    try:
+        selected = input("번호 선택 (쉼표로 구분, 전체 선택은 '0' 또는 빈칸): ").strip()
+        
+        if not selected or selected == "0" or selected == str(len(sections) + 1):
+            print("모든 섹션을 처리합니다.")
+            return [section["id"] for section in sections]
+        
+        selected_indices = [int(idx.strip()) - 1 for idx in selected.split(",") if idx.strip().isdigit()]
+        valid_indices = [idx for idx in selected_indices if 0 <= idx < len(sections)]
+        
+        if not valid_indices:
+            print("유효한 섹션을 선택하지 않았습니다. 모든 섹션을 처리합니다.")
+            return [section["id"] for section in sections]
+        
+        selected_sections = [sections[idx]["id"] for idx in valid_indices]
+        print(f"선택한 섹션: {', '.join(selected_sections)}")
+        return selected_sections
+    
+    except Exception as e:
+        print(f"섹션 선택 중 오류 발생: {str(e)}")
+        print("모든 섹션을 처리합니다.")
+        return [section["id"] for section in sections]
+
 def main():
     print("\n===== 예비창업패키지 사업계획서 작성 도우미 =====")
-    print("Version 1.1.0 - 단일 책임 원칙 적용된 개선 구조")
+    print("Version 2.0.0 - 다중 섹션 지원")
     
     # 출력 디렉토리 확인
     output_dir = "output"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+    
+    # 처리할 섹션 선택
+    selected_sections = select_sections()
     
     # 입력 방식 선택
     print("\n기획서 입력 방식을 선택하세요:")
@@ -100,7 +191,7 @@ def main():
             print(f"오류: {file_path} 파일이 존재하지 않습니다.")
             return
         
-        process_single_proposal(file_path, output_dir)
+        process_single_proposal(file_path, output_dir, selected_sections)
         
     elif option == "2":
         # 디렉토리 내 모든 .txt 파일 처리
@@ -126,13 +217,13 @@ def main():
         # 모든 파일 처리
         output_files = []
         for file_path in txt_files:
-            output_file = process_single_proposal(file_path, output_dir)
+            output_file = process_single_proposal(file_path, output_dir, selected_sections)
             if output_file:
                 output_files.append(output_file)
         
         # 통합 문서 생성 여부
         if len(output_files) > 1 and input("모든 결과를 하나의 문서로 통합하시겠습니까? (y/n): ").strip().lower() == 'y':
-            combined_output = os.path.join(output_dir, "combined_problem_sections.docx")
+            combined_output = os.path.join(output_dir, "combined_business_plan.docx")
             merge_docx_files(output_files, combined_output)
             print(f"통합 문서가 생성되었습니다: {combined_output}")
         
@@ -157,13 +248,13 @@ def main():
         # 모든 파일 처리
         output_files = []
         for file_path in valid_files:
-            output_file = process_single_proposal(file_path, output_dir)
+            output_file = process_single_proposal(file_path, output_dir, selected_sections)
             if output_file:
                 output_files.append(output_file)
         
         # 통합 문서 생성 여부
         if len(output_files) > 1 and input("모든 결과를 하나의 문서로 통합하시겠습니까? (y/n): ").strip().lower() == 'y':
-            combined_output = os.path.join(output_dir, "combined_problem_sections.docx")
+            combined_output = os.path.join(output_dir, "combined_business_plan.docx")
             merge_docx_files(output_files, combined_output)
             print(f"통합 문서가 생성되었습니다: {combined_output}")
     

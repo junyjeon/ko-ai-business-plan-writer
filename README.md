@@ -5,9 +5,11 @@
 ## 기능
 
 - 기획서 분석: 여러 측면에서 기획서를 분석하고 누락된 정보를 식별
-- 문제 인식(Problem) 섹션 작성: 분석 결과를 바탕으로 사업계획서의 문제 인식 섹션 작성
+- 다중 섹션 지원: 문제 인식(Problem), 솔루션(Solution), 시장 분석(Market), 비즈니스 모델, 팀 구성, 스케일업 전략 등 여러 섹션 작성 가능
+- 섹션 선택 기능: 작성하고자 하는 특정 섹션만 선택하여 처리
 - 다중 기획서 처리: 여러 기획서를 동시에 처리하고 결과를 하나의 문서로 통합
 - Word 및 PDF 문서 생성: 작성된 내용을 Word 문서로 생성, 선택적으로 PDF 템플릿에 내용 추가
+- 프롬프트 외부화: 모든 프롬프트를 외부 파일로 관리하여 쉽게 수정 가능
 
 ## 프로젝트 구조
 
@@ -31,9 +33,18 @@ ko-ai-business-plan-writer/
 │   └── file_utils.py        # 파일 작업 유틸리티
 │
 ├── data/                    # 데이터 파일
+│   ├── section_config.json  # 섹션 설정 파일
 │   ├── prompts/             # 프롬프트 파일
-│   │   ├── analysis_prompt.txt
-│   │   └── generation_prompt.txt
+│   │   ├── analysis_prompts/  # 분석 프롬프트
+│   │   │   ├── problem_analysis.txt
+│   │   │   ├── solution_analysis.txt
+│   │   │   ├── market_analysis.txt
+│   │   │   └── ...
+│   │   └── generation_prompts/ # 생성 프롬프트
+│   │       ├── problem_generation.txt
+│   │       ├── solution_generation.txt
+│   │       ├── market_generation.txt
+│   │       └── ...
 │   ├── proposals/           # 입력 사업 아이디어
 │   └── templates/           # 템플릿 파일
 │
@@ -72,10 +83,31 @@ ko-ai-business-plan-writer/
    ```
 
 3. 프로세스:
+   - 처리할 섹션 선택
    - 입력 방식 선택 (단일 파일, 디렉토리 내 모든 .txt 파일, 여러 파일 지정)
    - 입력 파일 경로 지정
    - 자동으로 분석 및 섹션 작성 진행
    - 결과물 output 디렉토리에 저장
+
+## 신규 섹션 추가 방법
+
+1. `data/prompts/analysis_prompts/` 디렉토리에 분석 프롬프트 파일 생성 (예: `new_section_analysis.txt`)
+2. `data/prompts/generation_prompts/` 디렉토리에 생성 프롬프트 파일 생성 (예: `new_section_generation.txt`)
+3. `data/section_config.json` 파일에 새 섹션 정보 추가:
+   ```json
+   {
+     "id": "new_section",
+     "title": "새 섹션 제목",
+     "analysis_prompt": "data/prompts/analysis_prompts/new_section_analysis.txt",
+     "generation_prompt": "data/prompts/generation_prompts/new_section_generation.txt",
+     "pdf_position": "X",
+     "required_elements": [
+       "요소1",
+       "요소2",
+       "..."
+     ]
+   }
+   ```
 
 ## 테스트 실행
 

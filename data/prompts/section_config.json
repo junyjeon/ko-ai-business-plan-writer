@@ -1,0 +1,101 @@
+{
+  "sections": [
+    {
+      "id": "problem",
+      "title": "1. 문제 인식 (Problem)_창업 아이템의 필요성",
+      "pdf_position": [0, 50, 700],
+      "required_elements": [
+        {"name": "시장 규모", "description": "국내외 시장의 규모와 성장률 데이터"},
+        {"name": "시장 트렌드", "description": "최근 3년간 주요 변화"},
+        {"name": "경쟁 제품 분석", "description": "주요 경쟁사의 제품 특징과 한계점"},
+        {"name": "고객이 겪는 문제점", "description": "구체적이고 정량화된 자료"},
+        {"name": "목표 고객 정의", "description": "명확한 타겟 고객층"},
+        {"name": "통계 자료", "description": "객관적인 수치 데이터"}
+      ]
+    },
+    {
+      "id": "solution",
+      "title": "2. 해결 방안 (Solution)_제품/서비스 소개",
+      "pdf_position": [1, 50, 700],
+      "required_elements": [
+        {"name": "핵심 기술/서비스 설명", "description": "제품/서비스의 핵심 기능과 특징"},
+        {"name": "차별화 요소", "description": "경쟁사 대비 독특한 가치 제안"},
+        {"name": "기술적 구현 방법", "description": "구현 방식 및 기술적 근거"},
+        {"name": "사용자 경험", "description": "사용자가 얻는 이점과 경험"},
+        {"name": "현 개발 단계", "description": "현재 개발 상태와 향후 계획"}
+      ]
+    },
+    {
+      "id": "market",
+      "title": "3. 시장 분석 (Market)_목표 시장 및 규모",
+      "pdf_position": [2, 50, 700],
+      "required_elements": [
+        {"name": "목표 시장 정의", "description": "구체적인 타겟 시장 범위"},
+        {"name": "시장 규모 및 성장성", "description": "TAM, SAM, SOM 분석"},
+        {"name": "시장 트렌드", "description": "주요 동향 및 변화"},
+        {"name": "고객 세그먼트", "description": "주요 고객층 분석"},
+        {"name": "진입 장벽", "description": "시장 진입 시 예상되는 장애물"}
+      ]
+    },
+    {
+      "id": "business_model",
+      "title": "4. 비즈니스 모델 (Business Model)_수익 창출 방안",
+      "pdf_position": [3, 50, 700],
+      "required_elements": [
+        {"name": "수익 모델", "description": "주요 수익원 및 과금 체계"},
+        {"name": "가격 책정 전략", "description": "제품/서비스 가격 구조"},
+        {"name": "비용 구조", "description": "주요 비용 항목 및 비율"},
+        {"name": "파트너십", "description": "주요 협력 관계 및 전략"},
+        {"name": "유통 채널", "description": "제품/서비스 전달 방식"}
+      ]
+    },
+    {
+      "id": "competition",
+      "title": "5. 경쟁 분석 (Competition)_경쟁 우위 요소",
+      "pdf_position": [4, 50, 700],
+      "required_elements": [
+        {"name": "주요 경쟁사 파악", "description": "직접 및 간접 경쟁사 목록"},
+        {"name": "경쟁사 분석", "description": "SWOT 또는 비교 분석"},
+        {"name": "경쟁 우위 요소", "description": "자사의 차별화 포인트"},
+        {"name": "시장 포지셔닝", "description": "경쟁 환경 내 자사 위치"},
+        {"name": "진입 장벽 창출", "description": "경쟁사 진입 방어 전략"}
+      ]
+    },
+    {
+      "id": "team",
+      "title": "6. 팀 구성 (Team)_창업팀 역량",
+      "pdf_position": [5, 50, 700],
+      "required_elements": [
+        {"name": "창업자 소개", "description": "핵심 구성원의 전문성 및 경력"},
+        {"name": "직무 분담", "description": "팀 내 역할 분배"},
+        {"name": "전문성과 경험", "description": "관련 분야 경험 및 실적"},
+        {"name": "자문단/멘토", "description": "외부 전문가 지원 현황"},
+        {"name": "인력 계획", "description": "향후 팀 확장 계획"}
+      ]
+    },
+    {
+      "id": "financials",
+      "title": "7. 재무 계획 (Financials)_투자 및 비용 산출",
+      "pdf_position": [6, 50, 700],
+      "required_elements": [
+        {"name": "초기 투자 비용", "description": "창업 초기 필요 자본"},
+        {"name": "예상 매출", "description": "3-5년 매출 예측"},
+        {"name": "손익 분기점", "description": "BEP 도달 시점 추정"},
+        {"name": "자금 조달 계획", "description": "투자 유치 전략"},
+        {"name": "재무 지표", "description": "주요 재무 비율 및 지표"}
+      ]
+    },
+    {
+      "id": "scale_up",
+      "title": "8. 성장 전략 (Scale-up)_확장 계획",
+      "pdf_position": [7, 50, 700],
+      "required_elements": [
+        {"name": "성장 로드맵", "description": "단계별 성장 계획"},
+        {"name": "확장 전략", "description": "시장 확대 방안"},
+        {"name": "리스크 관리", "description": "예상 리스크 및 대응 방안"},
+        {"name": "국내외 진출 계획", "description": "지역 확장 전략"},
+        {"name": "출구 전략", "description": "장기적 사업 방향성"}
+      ]
+    }
+  ]
+} 
