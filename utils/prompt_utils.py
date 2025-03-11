@@ -92,7 +92,15 @@ def format_prompt_safely(template, **kwargs):
 def generate_problem_analysis_prompt(business_idea):
     """분석 프롬프트 생성 및 클립보드에 복사"""
     # 프롬프트 템플릿 로드
-    template_path = os.path.join("prompts", "analysis_prompt.txt")
+    template_path = os.path.join("data", "prompts", "analysis_prompt.txt")
+    
+    # 기존 경로도 확인 (이전 버전과의 호환성)
+    if not os.path.exists(template_path):
+        legacy_path = os.path.join("prompts", "analysis_prompt.txt")
+        if os.path.exists(legacy_path):
+            template_path = legacy_path
+            print(f"알림: 레거시 경로에서 프롬프트 템플릿을 로드합니다: {legacy_path}")
+    
     template = load_prompt_template(template_path)
     
     if not template:
@@ -137,7 +145,15 @@ def generate_problem_analysis_prompt(business_idea):
 def generate_problem_section_prompt(business_idea, analysis):
     """섹션 작성 프롬프트 생성 및 클립보드에 복사"""
     # 프롬프트 템플릿 로드
-    template_path = os.path.join("prompts", "generation_prompt.txt")
+    template_path = os.path.join("data", "prompts", "generation_prompt.txt")
+    
+    # 기존 경로도 확인 (이전 버전과의 호환성)
+    if not os.path.exists(template_path):
+        legacy_path = os.path.join("prompts", "generation_prompt.txt")
+        if os.path.exists(legacy_path):
+            template_path = legacy_path
+            print(f"알림: 레거시 경로에서 프롬프트 템플릿을 로드합니다: {legacy_path}")
+    
     template = load_prompt_template(template_path)
     
     if not template:

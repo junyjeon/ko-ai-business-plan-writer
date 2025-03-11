@@ -8,18 +8,9 @@ sys.path.append(current_dir)
 
 # 새로운 구조의 모듈 import
 from utils.prompt_utils import generate_problem_analysis_prompt, generate_problem_section_prompt
-from utils.pdf_utils import insert_text_to_pdf, create_docx_with_section, merge_docx_files
+from utils.pdf_utils import merge_docx_files
 from core.business_plan import BusinessPlanService
 from core.document_manager import DocumentManager
-
-def read_business_idea(file_path):
-    """기획서 파일 읽기"""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except Exception as e:
-        print(f"기획서 파일 읽기 오류: {str(e)}")
-        return None
 
 def process_single_proposal(file_path, output_dir):
     """단일 기획서 처리"""
@@ -28,13 +19,20 @@ def process_single_proposal(file_path, output_dir):
     
     print(f"\n===== 기획서 처리 중: {file_name} =====")
     
+    # 서비스 인스턴스 생성
+    bp_service = BusinessPlanService()
+    doc_manager = DocumentManager(output_dir)
+    
     # 기획서 읽기
-    business_idea = read_business_idea(file_path)
+    business_idea = bp_service.load_business_idea(file_path)
     if not business_idea:
         print(f"{file_path} 파일을 읽을 수 없습니다. 이 파일은 건너뜁니다.")
         return None
     
     print(f"기획서를 성공적으로 읽었습니다. (길이: {len(business_idea)} 자)")
+    
+    # 사업계획서 객체 생성
+    business_plan = bp_service.create_plan(f"{file_base_name}의 사업계획서", business_idea)
     
     # 1단계: 분석 프롬프트 생성 및 결과 가져오기
     print(f"\n===== 1단계: 기획서 분석 - {file_name} =====")
@@ -44,20 +42,28 @@ def process_single_proposal(file_path, output_dir):
     print(f"\n===== 2단계: 문제 인식 섹션 작성 - {file_name} =====")
     problem_section = generate_problem_section_prompt(business_idea, analysis)
     
+    # 사업계획서 객체에 섹션 내용 추가
+    business_plan.add_section_content("problem", problem_section)
+    
     # 3단계: 결과 저장
     output_docx = os.path.join(output_dir, f"{file_base_name}_problem_section.docx")
-    create_docx_with_section(problem_section, output_docx, title=f"문제 인식 (Problem) - {file_base_name}")
+    
+    # 문서 관리자를 통해 Word 문서 생성
+    doc_manager.create_document_from_sections(business_plan, f"{file_base_name}_problem_section.docx")
     print(f"Word 문서가 생성되었습니다: {output_docx}")
     
     # PDF 템플릿이 있는 경우 PDF도 생성
-    template_pdf = os.path.join("templates", "template.pdf")
+    legacy_template_pdf = os.path.join("templates", "template.pdf")
+    new_template_pdf = os.path.join("data", "templates", "template.pdf")
+    
+    # 템플릿 파일 경로 결정 (새 구조 또는 레거시 경로)
+    template_pdf = new_template_pdf if os.path.exists(new_template_pdf) else legacy_template_pdf
+    
     if os.path.exists(template_pdf):
         output_pdf = os.path.join(output_dir, f"{file_base_name}_business_plan.pdf")
-        position = (0, 50, 700)  # 첫 번째 페이지, x=50, y=700
-        
         try:
-            insert_text_to_pdf(template_pdf, output_pdf, problem_section, position)
-            print(f"PDF 문서가 생성되었습니다: {output_pdf}")
+            # PDF 변환 시도 (미구현 기능을 위한 안내만 제공)
+            doc_manager.create_pdf_from_docx(output_docx)
         except Exception as e:
             print(f"PDF 생성 중 오류 발생: {str(e)}")
     
@@ -65,7 +71,7 @@ def process_single_proposal(file_path, output_dir):
 
 def main():
     print("\n===== 예비창업패키지 사업계획서 작성 도우미 =====")
-    print("Version 1.0.0 - 단일 책임 원칙 적용된 구조")
+    print("Version 1.1.0 - 단일 책임 원칙 적용된 개선 구조")
     
     # 출력 디렉토리 확인
     output_dir = "output"
@@ -81,8 +87,13 @@ def main():
     option = input("선택 (기본값: 1): ").strip() or "1"
     
     if option == "1":
-        # 단일 파일 처리
-        default_path = os.path.join("proposal", "business_idea.txt")
+        # 단일 파일 처리 - 새 구조(data/proposals)와 레거시 구조(proposal) 모두 지원
+        default_new_path = os.path.join("data", "proposals", "business_idea.txt")
+        default_legacy_path = os.path.join("proposal", "business_idea.txt")
+        
+        # 기본 경로 결정 (새 구조 우선, 없으면 레거시 경로)
+        default_path = default_new_path if os.path.exists(default_new_path) else default_legacy_path
+        
         file_path = input(f"기획서 파일 경로 (기본값: {default_path}): ").strip() or default_path
         
         if not os.path.exists(file_path):
@@ -93,7 +104,12 @@ def main():
         
     elif option == "2":
         # 디렉토리 내 모든 .txt 파일 처리
-        default_dir = "proposal"
+        default_new_dir = "data/proposals"
+        default_legacy_dir = "proposal"
+        
+        # 기본 디렉토리 결정 (새 구조 우선, 없으면 레거시 경로)
+        default_dir = default_new_dir if os.path.exists(default_new_dir) else default_legacy_dir
+        
         dir_path = input(f"기획서 디렉토리 경로 (기본값: {default_dir}): ").strip() or default_dir
         
         if not os.path.exists(dir_path) or not os.path.isdir(dir_path):
