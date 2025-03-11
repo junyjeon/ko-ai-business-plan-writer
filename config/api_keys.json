@@ -1,0 +1,18 @@
+{
+  "public_data_portal": {
+    "api_key": "",
+    "base_url": "https://www.data.go.kr/api"
+  },
+  "kisti": {
+    "api_key": "",
+    "base_url": "https://api.kisti.re.kr"
+  },
+  "kosis": {
+    "api_key": "",
+    "base_url": "https://kosis.kr/openapi"
+  },
+  "ecos": {
+    "api_key": "",
+    "base_url": "https://ecos.bok.or.kr/api"
+  }
+} 
