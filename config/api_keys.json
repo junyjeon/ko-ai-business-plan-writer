@@ -4,7 +4,7 @@
     "base_url": "https://www.data.go.kr/api"
   },
   "kisti": {
-    "api_key": "",
+    "api_key": "25dd9b0ec5f84225b0f955aec1003841",
     "base_url": "https://api.kisti.re.kr"
   },
   "kosis": {

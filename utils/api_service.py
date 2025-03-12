@@ -154,34 +154,63 @@ class APIService:
     def search_section_data(self, section_id: str, keywords: List[str]) -> Dict:
         """
         섹션별 필요 데이터 검색
-        섹션 ID에 따라 적합한 API 선택
+        섹션 ID에 따라 적합한 API 선택하고, 해당 API가 사용 불가능하면 다른 API도 시도
         """
         results = {"data": [], "sources": []}
+        available_apis = {k: v for k, v in self.check_api_availability().items() if v}
         
-        # 섹션별 적합한 API 선택
-        if section_id in ["problem", "market"]:
-            # 시장 분석 관련 데이터
-            market_data = self.search_market_data(keywords)
-            results["data"].extend(market_data["data"])
-            results["sources"].extend(market_data["sources"])
-            
-        elif section_id == "competition":
-            # 경쟁사 분석 관련 데이터
-            competitors_data = self.search_competitors(keywords)
-            results["data"].extend(competitors_data["data"])
-            results["sources"].extend(competitors_data["sources"])
-            
-        elif section_id in ["scale_up", "financials"]:
-            # 경제 지표, 재무 관련 데이터
-            economic_data = self.search_economic_indicators(keywords)
-            results["data"].extend(economic_data["data"])
-            results["sources"].extend(economic_data["sources"])
+        # 우선 순위 API 목록 (각 섹션별 최적의 API 순서)
+        primary_apis = {
+            "problem": ["kosis", "public_data_portal", "kisti"],
+            "market": ["kosis", "public_data_portal", "kisti"],
+            "competition": ["kisti", "public_data_portal", "kosis"],
+            "scale_up": ["ecos", "kosis", "public_data_portal"],
+            "financials": ["ecos", "kosis", "public_data_portal"],
+            # 기본값: 모든 API 시도
+            "default": ["kosis", "kisti", "ecos", "public_data_portal"]
+        }
         
-        # API 키가 없는 경우 더미 데이터 제공
+        # 섹션에 맞는 API 우선순위 결정
+        priority_list = primary_apis.get(section_id, primary_apis["default"])
+        
+        # 가용한 API 중 우선순위에 따라 데이터 검색 시도
+        for api_name in priority_list:
+            if api_name not in available_apis or not available_apis[api_name]:
+                logger.info(f"API '{api_name}'는 사용할 수 없습니다. 다음 API를 시도합니다.")
+                continue
+            
+            logger.info(f"API '{api_name}'를 사용하여 데이터를 검색합니다.")
+            
+            # API별 검색 수행
+            api_results = None
+            
+            if api_name == "kosis":
+                api_results = self._search_kosis(keywords)
+            elif api_name == "kisti":
+                search_type = "competitors" if section_id == "competition" else "general"
+                api_results = self._search_kisti(keywords, search_type)
+            elif api_name == "ecos":
+                api_results = self._search_ecos(keywords)
+            elif api_name == "public_data_portal":
+                search_type = "market" if section_id in ["problem", "market"] else "general"
+                api_results = self._search_public_data_portal(keywords, search_type)
+            
+            # 결과가 있으면 추가
+            if api_results and api_results.get("data"):
+                results["data"].extend(api_results["data"])
+                results["sources"].extend(api_results["sources"])
+                logger.info(f"API '{api_name}'에서 {len(api_results['data'])}개의 데이터를 찾았습니다.")
+            
+            # 충분한 데이터를 찾았으면 검색 중단
+            if len(results["data"]) >= 3:
+                logger.info(f"충분한 데이터를 찾았습니다. 검색을 중단합니다.")
+                break
+        
+        # API 키가 없거나 모든 API 검색에서 데이터를 찾지 못한 경우 더미 데이터 제공
         if not results["data"]:
-            logger.warning(f"API 키가 설정되지 않아 더미 데이터를 반환합니다. 섹션: {section_id}")
+            logger.warning(f"사용 가능한 모든 API 검색에서 데이터를 찾지 못했습니다. 더미 데이터를 반환합니다. 섹션: {section_id}")
             results["data"] = self._get_dummy_data(section_id, keywords)
-            results["sources"] = ["예시 데이터 (API 키 미설정)"]
+            results["sources"] = ["예시 데이터 (API 검색 결과 없음)"]
         
         return results
     

@@ -10,6 +10,7 @@ project_root = os.path.dirname(current_dir)
 sys.path.append(project_root)
 
 from utils import pdf_utils
+from utils.pdf_utils import merge_docx_files  # merge_docx_files 함수 명시적으로 가져오기
 
 
 class DocumentManager:
@@ -42,6 +43,13 @@ class DocumentManager:
         except Exception as e:
             print(f"문서 생성 중 오류 발생: {str(e)}")
             return None
+    
+    # create_word_document를 create_document_from_sections의 별칭으로 추가
+    def create_word_document(self, business_plan, output_filename="business_plan.docx"):
+        """
+        사업계획서 객체로부터 Word 문서를 생성합니다 (create_document_from_sections의 별칭)
+        """
+        return self.create_document_from_sections(business_plan, output_filename)
     
     def create_pdf_from_docx(self, docx_path):
         """

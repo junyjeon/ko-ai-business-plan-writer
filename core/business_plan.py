@@ -29,6 +29,13 @@ class BusinessPlan:
             return True
         return False
     
+    def add_section(self, section_id, section_title=None, content=""):
+        """
+        섹션에 내용을 추가합니다 (add_section_content의 별칭)
+        section_title 매개변수는 호환성을 위해 존재하지만 사용되지 않습니다
+        """
+        return self.add_section_content(section_id, content)
+    
     def get_section_content(self, section_name):
         """
         특정 섹션의 내용을 반환합니다

@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import glob
 import json
@@ -13,10 +14,14 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from utils.api_service import APIService
 from utils.data_integration import DataIntegration
 from utils.agent import BusinessPlanAgent
+from utils.agent_system import BusinessPlanAgentSystem  # 새로운 에이전트 시스템 추가
 
 # 기존 클래스 임포트
 from core.business_plan import BusinessPlan, BusinessPlanService
 from core.document_manager import DocumentManager, merge_docx_files
+
+# 버전 설정
+VERSION = "3.1.0"  # OpenAI Agents SDK 지원 추가
 
 def generate_analysis_prompt(section_id: str, business_idea: str) -> str:
     """분석 프롬프트 생성"""
@@ -98,12 +103,22 @@ def load_section_config() -> Dict:
     
     try:
         with open(config_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            config = json.load(f)
+            
+        # 섹션 제목에서 번호 제거 (원본 제목은 original_title로 보존)
+        for section in config.get("sections", []):
+            if "title" in section:
+                # 원본 제목 보존
+                section["original_title"] = section["title"]
+                # 섹션 제목에서 번호 제거
+                section["title"] = re.sub(r'^\d+\.\s+', '', section["title"])
+        
+        return config
     except Exception as e:
         print(f"섹션 설정 로드 중 오류 발생: {str(e)}")
         return {"sections": []}
 
-def process_single_proposal(file_path, output_dir, selected_sections):
+def process_single_proposal(file_path, output_dir, selected_sections, use_agent_sdk=False):
     """단일 기획서 처리"""
     file_name = os.path.basename(file_path)
     file_base_name = os.path.splitext(file_name)[0]
@@ -113,7 +128,54 @@ def process_single_proposal(file_path, output_dir, selected_sections):
     # 서비스 인스턴스 생성
     bp_service = BusinessPlanService()
     doc_manager = DocumentManager(output_dir)
-    agent = BusinessPlanAgent()  # 에이전트 추가
+    
+    if use_agent_sdk:
+        # OpenAI Agents SDK 기반 에이전트 시스템 사용
+        agent_system = BusinessPlanAgentSystem()
+        
+        # 기획서 읽기
+        business_idea = bp_service.load_business_idea(file_path)
+        if not business_idea:
+            print(f"{file_path} 파일을 읽을 수 없습니다. 이 파일은 건너뜁니다.")
+            return None
+        
+        print(f"기획서를 성공적으로 읽었습니다. (길이: {len(business_idea)} 자)")
+        print(f"\n🚀 OpenAI Agents SDK를 사용한 에이전트 시스템이 활성화되었습니다.")
+        
+        # 에이전트 시스템을 통한 처리
+        print("\n🔄 에이전트 시스템이 비즈니스 플랜을 처리하고 있습니다. 이 작업은 몇 분 정도 소요될 수 있습니다...")
+        result = agent_system.run(business_idea, selected_sections)
+        
+        if result:
+            # 사업계획서 객체 생성 및 섹션 추가
+            business_plan = BusinessPlan(f"{file_base_name}의 사업계획서")
+            
+            for section_name, content in result["sections"].items():
+                section_id = section_name.lower().replace(' ', '_')
+                business_plan.add_section(section_id, content)
+            
+            # 문서 생성
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_filename = f"{file_base_name}_plan_{timestamp}.docx"
+            docx_path = doc_manager.create_word_document(business_plan, output_filename)
+            
+            if docx_path:
+                print(f"\n✅ 사업계획서 문서가 생성되었습니다: {docx_path}")
+                
+                # PDF 변환 확인
+                create_pdf = input("\nPDF로 변환하시겠습니까? (y/n): ").strip().lower() == 'y'
+                if create_pdf:
+                    pdf_path = doc_manager.create_pdf_from_docx(docx_path)
+                    if pdf_path:
+                        print(f"✅ PDF가 생성되었습니다: {pdf_path}")
+            
+            return docx_path
+        else:
+            print("\n❌ 에이전트 시스템 처리 중 오류가 발생했습니다.")
+            return None
+    else:
+        # 기존 에이전트 사용
+        agent = BusinessPlanAgent()  # 기존 에이전트 추가
     
     # 기획서 읽기
     business_idea = bp_service.load_business_idea(file_path)
@@ -354,6 +416,7 @@ def select_sections():
     
     print("\n처리할 섹션을 선택하세요:")
     for i, section in enumerate(sections, 1):
+        # load_section_config에서 이미 번호가 제거된 제목 사용
         print(f"{i}. {section['title']} ({section['id']})")
     print(f"{len(sections) + 1}. 모든 섹션")
     
@@ -381,127 +444,118 @@ def select_sections():
         return [section["id"] for section in sections]
 
 def main():
-    print("\n===== 예비창업패키지 사업계획서 작성 도우미 =====")
-    print("Version 3.0.0 - 에이전트 기반 시스템")
-    print("AI 에이전트가 기획서를 분석하고 부족한 정보를 자동으로 검색합니다.")
+    """메인 함수"""
+    print(f"\n==============================")
+    print(f"  비즈니스 플랜 작성 도구 v{VERSION}")
+    print(f"==============================\n")
     
-    # 출력 디렉토리 확인
+    # 에이전트 시스템 선택
+    print("에이전트 시스템 선택:")
+    print("1. 기본 에이전트 시스템 (기존)")
+    print("2. OpenAI Agents SDK 기반 에이전트 시스템 (새로운 기능)")
+    
+    agent_choice = input("사용할 에이전트 시스템을 선택하세요 (1 또는 2): ").strip()
+    use_agent_sdk = agent_choice == "2"
+    
+    # 출력 디렉토리 설정
     output_dir = "output"
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
     
-    # 처리할 섹션 선택
+    # 처리할 파일 선택
+    print("\n처리할 기획서 선택:")
+    print("1. 단일 기획서 파일")
+    print("2. 여러 기획서 파일")
+    
+    option = input("옵션을 선택하세요 (1 또는 2): ").strip()
+    
+    # 섹션 선택
     selected_sections = select_sections()
     
-    # 기획서 입력 방식
-    print("\n기획서 입력 방식을 선택하세요:")
-    print("1. 단일 파일")
-    print("2. 디렉토리 내 모든 파일")
-    print("3. 여러 파일 지정")
-    
-    option = input("옵션 선택 (1-3): ").strip()
-    
     if option == "1":
-        # 단일 파일 처리
+        # 단일 파일 처리 - 기본 경로 제공
         default_new_path = "data/proposals/business_idea.txt"
         default_legacy_path = "proposal/business_idea.txt"
         
         # 기본 경로 결정 (새 구조 우선, 없으면 레거시 경로)
         default_path = default_new_path if os.path.exists(default_new_path) else default_legacy_path
         
-        file_path = input(f"기획서 파일 경로 (기본값: {default_path}): ").strip() or default_path
+        file_path = input(f"\n처리할 기획서 파일 경로를 입력하세요 (기본값: {default_path}): ").strip() or default_path
         
         if not os.path.exists(file_path):
-            print(f"오류: {file_path} 파일이 존재하지 않습니다.")
+            print(f"오류: 파일을 찾을 수 없습니다: {file_path}")
+            # 기본 디렉토리 생성 제안
+            create_default_dir = input("기본 디렉토리를 생성할까요? (y/n): ").strip().lower() == 'y'
+            if create_default_dir:
+                os.makedirs(os.path.dirname(default_new_path), exist_ok=True)
+                print(f"기본 디렉토리가 생성되었습니다: {os.path.dirname(default_new_path)}")
             return
         
-        process_single_proposal(file_path, output_dir, selected_sections)
+        docx_path = process_single_proposal(file_path, output_dir, selected_sections, use_agent_sdk)
+        if docx_path:
+            print(f"\n✅ 사업계획서 작성이 완료되었습니다.")
         
     elif option == "2":
-        # 디렉토리 내 모든 .txt 파일 처리
+        # 여러 파일 처리 - 기본 디렉토리 제공
         default_new_dir = "data/proposals"
         default_legacy_dir = "proposal"
         
         # 기본 디렉토리 결정 (새 구조 우선, 없으면 레거시 경로)
         default_dir = default_new_dir if os.path.exists(default_new_dir) else default_legacy_dir
         
-        dir_path = input(f"기획서 디렉토리 경로 (기본값: {default_dir}): ").strip() or default_dir
+        directory = input(f"\n기획서 파일이 있는 디렉토리 경로를 입력하세요 (기본값: {default_dir}): ").strip() or default_dir
         
-        if not os.path.exists(dir_path) or not os.path.isdir(dir_path):
-            print(f"오류: {dir_path} 디렉토리가 존재하지 않습니다.")
+        if not os.path.isdir(directory):
+            print(f"오류: 디렉토리를 찾을 수 없습니다: {directory}")
+            # 기본 디렉토리 생성 제안
+            create_default_dir = input("기본 디렉토리를 생성할까요? (y/n): ").strip().lower() == 'y'
+            if create_default_dir:
+                os.makedirs(default_new_dir, exist_ok=True)
+                print(f"기본 디렉토리가 생성되었습니다: {default_new_dir}")
             return
         
-        txt_files = glob.glob(os.path.join(dir_path, "*.txt"))
-        if not txt_files:
-            print(f"오류: {dir_path} 디렉토리에 .txt 파일이 없습니다.")
-            return
-        
-        print(f"{len(txt_files)}개의 기획서 파일을 찾았습니다.")
-        
-        # 모든 파일 처리
-        output_files = []
-        successful_files = 0
-        
-        for file_path in txt_files:
-            output_file = process_single_proposal(file_path, output_dir, selected_sections)
-            if output_file:
-                output_files.append(output_file)
-                successful_files += 1
-        
-        print(f"\n총 {len(txt_files)}개 중 {successful_files}개의 기획서를 성공적으로 처리했습니다.")
-        
-        # 통합 문서 생성 여부
-        if len(output_files) > 1 and input("모든 결과를 하나의 문서로 통합하시겠습니까? (y/n): ").strip().lower() == 'y':
-            combined_output = os.path.join(output_dir, "combined_business_plan.docx")
-            merge_docx_files(output_files, combined_output)
-            print(f"통합 문서가 생성되었습니다: {combined_output}")
-        
-    elif option == "3":
-        # 여러 파일 지정
-        file_input = input("처리할 기획서 파일들의 경로를 쉼표로 구분하여 입력하세요: ").strip()
-        file_paths = [path.strip() for path in file_input.split(",") if path.strip()]
+        file_pattern = input("처리할 파일 패턴을 입력하세요 (예: *.txt, 기본값: *.txt): ").strip() or "*.txt"
+        file_paths = glob.glob(os.path.join(directory, file_pattern))
         
         if not file_paths:
-            print("오류: 유효한 파일 경로가 입력되지 않았습니다.")
+            print(f"오류: 지정한 패턴과 일치하는 파일을 찾을 수 없습니다: {file_pattern}")
             return
         
-        # 유효한 파일 경로만 필터링
-        valid_paths = []
-        for path in file_paths:
-            if os.path.exists(path):
-                valid_paths.append(path)
-            else:
-                print(f"경고: {path} 파일이 존재하지 않습니다.")
+        print(f"\n{len(file_paths)}개의 파일을 처리합니다...")
+        docx_paths = []
         
-        if not valid_paths:
-            print("오류: 유효한 파일이 없습니다.")
-            return
+        for file_path in file_paths:
+            docx_path = process_single_proposal(file_path, output_dir, selected_sections, use_agent_sdk)
+            if docx_path:
+                docx_paths.append(docx_path)
         
-        print(f"{len(valid_paths)}개의 기획서 파일을 처리합니다.")
-        
-        # 모든 파일 처리
-        output_files = []
-        successful_files = 0
-        
-        for file_path in valid_paths:
-            output_file = process_single_proposal(file_path, output_dir, selected_sections)
-            if output_file:
-                output_files.append(output_file)
-                successful_files += 1
-        
-        print(f"\n총 {len(valid_paths)}개 중 {successful_files}개의 기획서를 성공적으로 처리했습니다.")
-        
-        # 통합 문서 생성 여부
-        if len(output_files) > 1 and input("모든 결과를 하나의 문서로 통합하시겠습니까? (y/n): ").strip().lower() == 'y':
-            combined_output = os.path.join(output_dir, "combined_business_plan.docx")
-            merge_docx_files(output_files, combined_output)
-            print(f"통합 문서가 생성되었습니다: {combined_output}")
-    
+        if docx_paths:
+            # 여러 문서 병합 여부 확인
+            merge_option = input("\n모든 사업계획서를 하나의 문서로 병합하시겠습니까? (y/n): ").strip().lower()
+            
+            if merge_option == 'y' and len(docx_paths) > 1:
+                # 병합 파일명 설정
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                merged_filename = f"merged_business_plans_{timestamp}.docx"
+                merged_path = os.path.join(output_dir, merged_filename)
+                
+                # 문서 병합
+                try:
+                    merge_docx_files(docx_paths, merged_path)
+                    print(f"\n✅ 병합된 사업계획서가 생성되었습니다: {merged_path}")
+                    
+                    # PDF 변환 확인
+                    doc_manager = DocumentManager(output_dir)
+                    create_pdf = input("\n병합된 문서를 PDF로 변환하시겠습니까? (y/n): ").strip().lower() == 'y'
+                    if create_pdf:
+                        pdf_path = doc_manager.create_pdf_from_docx(merged_path)
+                        if pdf_path:
+                            print(f"✅ PDF가 생성되었습니다: {pdf_path}")
+                except Exception as e:
+                    print(f"문서 병합 중 오류 발생: {str(e)}")
+            
+            print(f"\n✅ 총 {len(docx_paths)}개의 사업계획서 작성이 완료되었습니다.")
     else:
-        print("잘못된 옵션을 선택했습니다. 프로그램을 종료합니다.")
-        return
-    
-    print("\n===== 작업이 완료되었습니다 =====")
+        print("잘못된 옵션입니다. 1 또는 2를 선택하세요.")
 
 if __name__ == "__main__":
     main()
