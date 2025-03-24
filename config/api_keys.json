@@ -1,6 +1,6 @@
 {
   "public_data_portal": {
-    "api_key": "",
+    "api_key": "+OkWyS+jCSbH8iy6EgVNtvfDxfKo9ImIII2zL/qdiWXOzs0u5aNFjpZ782duf46IjgD99p9VA5BmiSS8IeosQw==",
     "base_url": "https://www.data.go.kr/api"
   },
   "kisti": {
@@ -8,11 +8,11 @@
     "base_url": "https://api.kisti.re.kr"
   },
   "kosis": {
-    "api_key": "",
+    "api_key": "NWExODc0MTVhOThhMTVjYWM0YTQyMjY4ZmU0MTkyOTg=",
     "base_url": "https://kosis.kr/openapi"
   },
   "ecos": {
-    "api_key": "",
+    "api_key": "VQYDED8XXGPFUEFQHEN8",
     "base_url": "https://ecos.bok.or.kr/api"
   }
 } 

@@ -118,6 +118,145 @@ def load_section_config() -> Dict:
         print(f"섹션 설정 로드 중 오류 발생: {str(e)}")
         return {"sections": []}
 
+def handle_clipboard_interaction(prompt, prompt_type="분석"):
+    """클립보드 복사 및 사용자 상호작용 처리"""
+    pyperclip.copy(prompt)
+    print(f"{prompt_type} 프롬프트가 클립보드에 복사되었습니다.")
+    copy_again = True
+    
+    while copy_again:
+        print("1. Cursor AI에 붙여넣기 후 실행해주세요")
+        print("2. 응답이 생성되면 복사 버튼을 클릭하세요")
+        option = input("3. 복사가 완료되면 Enter를 눌러 계속하세요 (다시 복사하려면 'r' 입력): ").strip().lower()
+        
+        if option == 'r':
+            pyperclip.copy(prompt)
+            print(f"{prompt_type} 프롬프트가 클립보드에 다시 복사되었습니다.")
+        else:
+            copy_again = False
+    
+    # 클립보드에서 결과 가져오기
+    result = pyperclip.paste()
+    if not result or result == prompt:
+        print(f"경고: 클립보드에서 유효한 {prompt_type} 결과를 가져올 수 없습니다.")
+        user_input = input(f"직접 {prompt_type} 결과를 입력하시겠습니까? (y/n): ").strip().lower()
+        if user_input == 'y':
+            print(f"{prompt_type} 결과를 입력하세요. 입력을 마치려면 빈 줄에서 Ctrl+D (Unix) 또는 Ctrl+Z (Windows)를 입력하세요:")
+            lines = []
+            while True:
+                try:
+                    line = input()
+                    lines.append(line)
+                except EOFError:
+                    break
+            result = "\n".join(lines)
+        else:
+            result = f"{prompt_type} 정보 없음"
+    
+    return result
+
+def process_section_with_agent(agent, section_id, section_title, business_idea, analysis_result, can_use_api):
+    """에이전트를 사용한 섹션 처리"""
+    # 에이전트를 통한 분석 결과 처리
+    if "없음" in analysis_result and can_use_api:
+        print("\n🔍 에이전트가 분석 결과를 확인하고 부족한 정보를 검색합니다...")
+        
+        # 부족한 정보 분석
+        missing_info, business_context = agent.analyze_missing_info(analysis_result, business_idea, section_id)
+        
+        if missing_info:
+            print(f"\n📋 다음 정보가 부족합니다:")
+            for i, item in enumerate(missing_info, 1):
+                print(f"  {i}. {item['item']} - {item['explanation']}")
+            
+            # 검색 여부 확인
+            search_api = input("\n에이전트가 이 정보를 검색하도록 할까요? (y/n): ").strip().lower() == 'y'
+            
+            if search_api:
+                print("\n🔎 에이전트가 관련 정보를 검색 중입니다...")
+                
+                # 검색 수행
+                search_results = agent.search_and_integrate(missing_info, business_context, section_id)
+                
+                if search_results["success"]:
+                    print(f"✅ {search_results['message']}")
+                    
+                    # 결과 평가
+                    evaluation = agent.evaluate_search_results(search_results, missing_info, section_id)
+                    
+                    # 통합 추천
+                    recommendation = agent.create_integration_recommendation(search_results, evaluation, section_id)
+                    print("\n" + recommendation)
+                    
+                    # 통합 여부 확인
+                    use_data = input("\n이 데이터를 분석 결과에 통합할까요? (y/n): ").strip().lower() == 'y'
+                    
+                    if use_data:
+                        # 데이터 통합
+                        additional_info = f"\n\n### 에이전트가 찾은 추가 정보:\n{recommendation}"
+                        enhanced_analysis = analysis_result + additional_info
+                        print("✅ 에이전트가 검색한 데이터가 분석 결과에 추가되었습니다.")
+                        return enhanced_analysis
+                else:
+                    print(f"❌ {search_results['message']}")
+    
+    return analysis_result
+
+def integrate_api_data_into_generation(agent, section_id, generation_result, business_idea, can_use_api):
+    """생성 결과에 API 데이터 통합"""
+    if can_use_api and "[필요 정보:" in generation_result:
+        print("\n🔍 에이전트가 생성된 내용에서 부족한 정보를 검색합니다...")
+        
+        # 부족한 정보 분석 - 생성 결과에서 "[필요 정보:" 패턴 추출
+        missing_info_patterns = re.findall(r'\[필요 정보:[^\]]+\]', generation_result)
+        
+        if missing_info_patterns:
+            # 가상 분석 결과 생성
+            fake_analysis = "\n".join([f"항목: 없음 - {pattern[13:-1]}" for pattern in missing_info_patterns])
+            
+            # 부족한 정보 분석
+            missing_info, business_context = agent.analyze_missing_info(fake_analysis, business_idea, section_id)
+            
+            if missing_info:
+                print(f"\n📋 다음 정보가 부족합니다:")
+                for i, item in enumerate(missing_info, 1):
+                    print(f"  {i}. {item['item']} - {item['explanation']}")
+                
+                # 자동 검색 (에이전트 모드에서는 자동으로 검색)
+                print("\n🔎 에이전트가 관련 정보를 검색 중입니다...")
+                
+                # 검색 수행
+                search_results = agent.search_and_integrate(missing_info, business_context, section_id)
+                
+                if search_results["success"]:
+                    print(f"✅ {search_results['message']}")
+                    
+                    # 결과 평가
+                    evaluation = agent.evaluate_search_results(search_results, missing_info, section_id)
+                    
+                    # 생성된 내용에 데이터 통합
+                    for pattern in missing_info_patterns:
+                        # 데이터 요약 생성
+                        data_summary = agent.data_integration.create_data_summary(
+                            section_id, search_results["data"], search_results["sources"]
+                        )
+                        
+                        # 패턴 교체 - 닫는 괄호가 확실히 포함되도록 수정
+                        # 중복되거나 애매한 문장 방지를 위한 요약문 정리
+                        data_summary = data_summary.strip()
+                        
+                        # 요약이 마침표로 끝나지 않으면 추가
+                        if not data_summary.endswith('.'):
+                            data_summary += '.'
+                            
+                        # 문장을 명확히 하고 닫는 괄호 확실히 포함
+                        replacement = f"[참고 데이터: {data_summary}]"
+                        generation_result = generation_result.replace(pattern, replacement)
+                    
+                    print("✅ 에이전트가 검색한 데이터가 생성 결과에 통합되었습니다.")
+    
+    return generation_result
+
 def process_single_proposal(file_path, output_dir, selected_sections, use_agent_sdk=False):
     """단일 기획서 처리"""
     file_name = os.path.basename(file_path)
@@ -129,53 +268,12 @@ def process_single_proposal(file_path, output_dir, selected_sections, use_agent_
     bp_service = BusinessPlanService()
     doc_manager = DocumentManager(output_dir)
     
+    # Agent SDK 기반 처리
     if use_agent_sdk:
-        # OpenAI Agents SDK 기반 에이전트 시스템 사용
-        agent_system = BusinessPlanAgentSystem()
-        
-        # 기획서 읽기
-        business_idea = bp_service.load_business_idea(file_path)
-        if not business_idea:
-            print(f"{file_path} 파일을 읽을 수 없습니다. 이 파일은 건너뜁니다.")
-            return None
-        
-        print(f"기획서를 성공적으로 읽었습니다. (길이: {len(business_idea)} 자)")
-        print(f"\n🚀 OpenAI Agents SDK를 사용한 에이전트 시스템이 활성화되었습니다.")
-        
-        # 에이전트 시스템을 통한 처리
-        print("\n🔄 에이전트 시스템이 비즈니스 플랜을 처리하고 있습니다. 이 작업은 몇 분 정도 소요될 수 있습니다...")
-        result = agent_system.run(business_idea, selected_sections)
-        
-        if result:
-            # 사업계획서 객체 생성 및 섹션 추가
-            business_plan = BusinessPlan(f"{file_base_name}의 사업계획서")
-            
-            for section_name, content in result["sections"].items():
-                section_id = section_name.lower().replace(' ', '_')
-                business_plan.add_section(section_id, content)
-            
-            # 문서 생성
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_filename = f"{file_base_name}_plan_{timestamp}.docx"
-            docx_path = doc_manager.create_word_document(business_plan, output_filename)
-            
-            if docx_path:
-                print(f"\n✅ 사업계획서 문서가 생성되었습니다: {docx_path}")
-                
-                # PDF 변환 확인
-                create_pdf = input("\nPDF로 변환하시겠습니까? (y/n): ").strip().lower() == 'y'
-                if create_pdf:
-                    pdf_path = doc_manager.create_pdf_from_docx(docx_path)
-                    if pdf_path:
-                        print(f"✅ PDF가 생성되었습니다: {pdf_path}")
-            
-            return docx_path
-        else:
-            print("\n❌ 에이전트 시스템 처리 중 오류가 발생했습니다.")
-            return None
-    else:
-        # 기존 에이전트 사용
-        agent = BusinessPlanAgent()  # 기존 에이전트 추가
+        return process_with_agent_sdk(file_path, file_base_name, bp_service, doc_manager, output_dir, selected_sections)
+    
+    # 기존 에이전트 사용
+    agent = BusinessPlanAgent()
     
     # 기획서 읽기
     business_idea = bp_service.load_business_idea(file_path)
@@ -224,82 +322,11 @@ def process_single_proposal(file_path, output_dir, selected_sections, use_agent_
             print(f"{section_title} 섹션을 위한 분석 프롬프트를 생성할 수 없습니다.")
             continue
         
-        # 클립보드에 복사
-        pyperclip.copy(analysis)
-        print("분석 프롬프트가 클립보드에 복사되었습니다.")
-        copy_again = True
-        
-        while copy_again:
-            print("1. Cursor AI에 붙여넣기 후 실행해주세요")
-            print("2. 응답이 생성되면 복사 버튼을 클릭하세요")
-            option = input("3. 복사가 완료되면 Enter를 눌러 계속하세요 (다시 복사하려면 'r' 입력): ").strip().lower()
-            
-            if option == 'r':
-                pyperclip.copy(analysis)
-                print("분석 프롬프트가 클립보드에 다시 복사되었습니다.")
-            else:
-                copy_again = False
-        
-        # 클립보드에서 분석 결과 가져오기
-        analysis_result = pyperclip.paste()
-        if not analysis_result or analysis_result == analysis:
-            print("경고: 클립보드에서 유효한 분석 결과를 가져올 수 없습니다.")
-            analysis_result = input("직접 분석 결과를 입력하시겠습니까? (y/n): ").strip().lower()
-            if analysis_result == 'y':
-                print("분석 결과를 입력하세요. 입력을 마치려면 빈 줄에서 Ctrl+D (Unix) 또는 Ctrl+Z (Windows)를 입력하세요:")
-                lines = []
-                while True:
-                    try:
-                        line = input()
-                        lines.append(line)
-                    except EOFError:
-                        break
-                analysis_result = "\n".join(lines)
-            else:
-                analysis_result = "분석 정보 없음"
+        # 클립보드 상호작용 처리
+        analysis_result = handle_clipboard_interaction(analysis, "분석")
         
         # 에이전트를 통한 분석 결과 처리
-        if "없음" in analysis_result and can_use_api:
-            print("\n🔍 에이전트가 분석 결과를 확인하고 부족한 정보를 검색합니다...")
-            
-            # 부족한 정보 분석
-            missing_info, business_context = agent.analyze_missing_info(analysis_result, business_idea, section_id)
-            
-            if missing_info:
-                print(f"\n📋 다음 정보가 부족합니다:")
-                for i, item in enumerate(missing_info, 1):
-                    print(f"  {i}. {item['item']} - {item['explanation']}")
-                
-                # 검색 여부 확인
-                search_api = input("\n에이전트가 이 정보를 검색하도록 할까요? (y/n): ").strip().lower() == 'y'
-                
-                if search_api:
-                    print("\n🔎 에이전트가 관련 정보를 검색 중입니다...")
-                    
-                    # 검색 수행
-                    search_results = agent.search_and_integrate(missing_info, business_context, section_id)
-                    
-                    if search_results["success"]:
-                        print(f"✅ {search_results['message']}")
-                        
-                        # 결과 평가
-                        evaluation = agent.evaluate_search_results(search_results, missing_info, section_id)
-                        
-                        # 통합 추천
-                        recommendation = agent.create_integration_recommendation(search_results, evaluation, section_id)
-                        print("\n" + recommendation)
-                        
-                        # 통합 여부 확인
-                        use_data = input("\n이 데이터를 분석 결과에 통합할까요? (y/n): ").strip().lower() == 'y'
-                        
-                        if use_data:
-                            # 데이터 통합
-                            additional_info = f"\n\n### 에이전트가 찾은 추가 정보:\n{recommendation}"
-                            enhanced_analysis = analysis_result + additional_info
-                            print("✅ 에이전트가 검색한 데이터가 분석 결과에 추가되었습니다.")
-                            analysis_result = enhanced_analysis
-                    else:
-                        print(f"❌ {search_results['message']}")
+        analysis_result = process_section_with_agent(agent, section_id, section_title, business_idea, analysis_result, can_use_api)
         
         # 2단계: 사업계획서 섹션 생성 프롬프트 생성
         print(f"\n2단계: 섹션 생성 - {section_title}")
@@ -309,83 +336,11 @@ def process_single_proposal(file_path, output_dir, selected_sections, use_agent_
             print(f"{section_title} 섹션을 위한 생성 프롬프트를 생성할 수 없습니다.")
             continue
         
-        # 클립보드에 복사
-        pyperclip.copy(generation_prompt)
-        print("생성 프롬프트가 클립보드에 복사되었습니다.")
-        copy_again = True
-        
-        while copy_again:
-            print("1. Cursor AI에 붙여넣기 후 실행해주세요")
-            print("2. 응답이 생성되면 복사 버튼을 클릭하세요")
-            option = input("3. 복사가 완료되면 Enter를 눌러 계속하세요 (다시 복사하려면 'r' 입력): ").strip().lower()
-            
-            if option == 'r':
-                pyperclip.copy(generation_prompt)
-                print("생성 프롬프트가 클립보드에 다시 복사되었습니다.")
-            else:
-                copy_again = False
-        
-        # 클립보드에서 생성 결과 가져오기
-        generation_result = pyperclip.paste()
-        if not generation_result or generation_result == generation_prompt:
-            print("경고: 클립보드에서 유효한 생성 결과를 가져올 수 없습니다.")
-            generation_result = input("직접 생성 결과를 입력하시겠습니까? (y/n): ").strip().lower()
-            if generation_result == 'y':
-                print("생성 결과를 입력하세요. 입력을 마치려면 빈 줄에서 Ctrl+D (Unix) 또는 Ctrl+Z (Windows)를 입력하세요:")
-                lines = []
-                while True:
-                    try:
-                        line = input()
-                        lines.append(line)
-                    except EOFError:
-                        break
-                generation_result = "\n".join(lines)
-            else:
-                generation_result = "섹션 내용 없음"
+        # 클립보드 상호작용 처리
+        generation_result = handle_clipboard_interaction(generation_prompt, "생성")
         
         # 생성 결과에 API 데이터 통합
-        if can_use_api and "[필요 정보:" in generation_result:
-            print("\n🔍 에이전트가 생성된 내용에서 부족한 정보를 검색합니다...")
-            
-            # 부족한 정보 분석 - 생성 결과에서 "[필요 정보:" 패턴 추출
-            missing_info_patterns = re.findall(r'\[필요 정보:[^\]]+\]', generation_result)
-            
-            if missing_info_patterns:
-                # 가상 분석 결과 생성
-                fake_analysis = "\n".join([f"항목: 없음 - {pattern[13:-1]}" for pattern in missing_info_patterns])
-                
-                # 부족한 정보 분석
-                missing_info, business_context = agent.analyze_missing_info(fake_analysis, business_idea, section_id)
-                
-                if missing_info:
-                    print(f"\n📋 다음 정보가 부족합니다:")
-                    for i, item in enumerate(missing_info, 1):
-                        print(f"  {i}. {item['item']} - {item['explanation']}")
-                    
-                    # 자동 검색 (에이전트 모드에서는 자동으로 검색)
-                    print("\n🔎 에이전트가 관련 정보를 검색 중입니다...")
-                    
-                    # 검색 수행
-                    search_results = agent.search_and_integrate(missing_info, business_context, section_id)
-                    
-                    if search_results["success"]:
-                        print(f"✅ {search_results['message']}")
-                        
-                        # 결과 평가
-                        evaluation = agent.evaluate_search_results(search_results, missing_info, section_id)
-                        
-                        # 생성된 내용에 데이터 통합
-                        for pattern in missing_info_patterns:
-                            # 데이터 요약 생성
-                            data_summary = agent.data_integration.create_data_summary(
-                                section_id, search_results["data"], search_results["sources"]
-                            )
-                            
-                            # 패턴 교체
-                            replacement = f"[참고 데이터: {data_summary}]"
-                            generation_result = generation_result.replace(pattern, replacement)
-                        
-                        print("✅ 에이전트가 검색한 데이터가 생성 결과에 통합되었습니다.")
+        generation_result = integrate_api_data_into_generation(agent, section_id, generation_result, business_idea, can_use_api)
         
         # 사업계획서에 섹션 추가
         business_plan.add_section(section_id, section_title, generation_result)
@@ -404,6 +359,77 @@ def process_single_proposal(file_path, output_dir, selected_sections, use_agent_
     
     return output_file
 
+def process_with_agent_sdk(file_path, file_base_name, bp_service, doc_manager, output_dir, selected_sections):
+    """Agent SDK를 사용한 처리"""
+    # OpenAI Agents SDK 기반 에이전트 시스템 사용
+    agent_system = BusinessPlanAgentSystem()
+    
+    # 기획서 읽기
+    business_idea = bp_service.load_business_idea(file_path)
+    if not business_idea:
+        print(f"{file_path} 파일을 읽을 수 없습니다. 이 파일은 건너뜁니다.")
+        return None
+    
+    print(f"기획서를 성공적으로 읽었습니다. (길이: {len(business_idea)} 자)")
+    print(f"\n🚀 OpenAI Agents SDK를 사용한 에이전트 시스템이 활성화되었습니다.")
+    
+    # 제안서 처리 방식 선택
+    processing_mode = input("""
+    기획서 처리 방식을 선택하세요:
+    1. 원본 내용 그대로 사용
+    2. Agent를 사용하여 요약 (핵심 내용 유지)
+    3. 섹션별 분석 및 개선 (기존 방식)
+    옵션을 선택하세요 (1, 2 또는 3, 기본값: 3): """).strip()
+
+    if processing_mode == "1":
+        mode = "raw"
+        print("선택됨: 원본 내용 그대로 사용")
+    elif processing_mode == "2":
+        mode = "summarize"
+        print("선택됨: Agent를 사용하여 요약")
+    else:
+        if not processing_mode or processing_mode != "3":
+            print("기본값 '3. 섹션별 분석 및 개선'이 선택되었습니다.")
+        else:
+            print("선택됨: 섹션별 분석 및 개선")
+        mode = "analyze"  # 기존 방식
+    
+    # 에이전트 시스템을 통한 처리
+    print("\n🔄 에이전트 시스템이 비즈니스 플랜을 처리하고 있습니다. 이 작업은 몇 분 정도 소요될 수 있습니다...")
+    try:
+        result = agent_system.run_with_mode(business_idea, mode, selected_sections)
+    except Exception as e:
+        print(f"\n❌ 에이전트 시스템 처리 중 오류가 발생했습니다: {str(e)}")
+        return None
+
+    if result:
+        # 사업계획서 객체 생성 및 섹션 추가
+        business_plan = BusinessPlan(f"{file_base_name}의 사업계획서")
+        
+        for section_name, content in result["sections"].items():
+            section_id = section_name.lower().replace(' ', '_')
+            business_plan.add_section(section_id, content)
+        
+        # 문서 생성
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{file_base_name}_plan_{timestamp}.docx"
+        docx_path = doc_manager.create_word_document(business_plan, output_filename)
+        
+        if docx_path:
+            print(f"\n✅ 사업계획서 문서가 생성되었습니다: {docx_path}")
+            
+            # PDF 변환 확인
+            create_pdf = input("\nPDF로 변환하시겠습니까? (y/n): ").strip().lower() == 'y'
+            if create_pdf:
+                pdf_path = doc_manager.create_pdf_from_docx(docx_path)
+                if pdf_path:
+                    print(f"✅ PDF가 생성되었습니다: {pdf_path}")
+        
+        return docx_path
+    else:
+        print("\n❌ 에이전트 시스템 처리 중 오류가 발생했습니다.")
+        return None
+
 def select_sections():
     """처리할 섹션 선택"""
     # 섹션 설정 로드
@@ -421,17 +447,17 @@ def select_sections():
     print(f"{len(sections) + 1}. 모든 섹션")
     
     try:
-        selected = input("번호 선택 (쉼표로 구분, 전체 선택은 '0' 또는 빈칸): ").strip()
+        selected = input("번호 선택 (쉼표로 구분, 엔터만 누르거나 '0' 입력 시 모든 섹션 선택): ").strip()
         
         if not selected or selected == "0" or selected == str(len(sections) + 1):
-            print("모든 섹션을 처리합니다.")
+            print("기본값: 모든 섹션을 처리합니다.")
             return [section["id"] for section in sections]
         
         selected_indices = [int(idx.strip()) - 1 for idx in selected.split(",") if idx.strip().isdigit()]
         valid_indices = [idx for idx in selected_indices if 0 <= idx < len(sections)]
         
         if not valid_indices:
-            print("유효한 섹션을 선택하지 않았습니다. 모든 섹션을 처리합니다.")
+            print("유효한 섹션을 선택하지 않았습니다. 기본값: 모든 섹션을 처리합니다.")
             return [section["id"] for section in sections]
         
         selected_sections = [sections[idx]["id"] for idx in valid_indices]
@@ -440,7 +466,7 @@ def select_sections():
     
     except Exception as e:
         print(f"섹션 선택 중 오류 발생: {str(e)}")
-        print("모든 섹션을 처리합니다.")
+        print("기본값: 모든 섹션을 처리합니다.")
         return [section["id"] for section in sections]
 
 def main():
@@ -453,21 +479,24 @@ def main():
     print("에이전트 시스템 선택:")
     print("1. 기본 에이전트 시스템 (기존)")
     print("2. OpenAI Agents SDK 기반 에이전트 시스템 (새로운 기능)")
-    
-    agent_choice = input("사용할 에이전트 시스템을 선택하세요 (1 또는 2): ").strip()
+
+    agent_choice = input("사용할 에이전트 시스템을 선택하세요 (1 또는 2, 기본값: 1): ").strip()
     use_agent_sdk = agent_choice == "2"
-    
+
     # 출력 디렉토리 설정
     output_dir = "output"
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # 처리할 파일 선택
     print("\n처리할 기획서 선택:")
     print("1. 단일 기획서 파일")
     print("2. 여러 기획서 파일")
-    
-    option = input("옵션을 선택하세요 (1 또는 2): ").strip()
-    
+
+    option = input("옵션을 선택하세요 (1 또는 2, 기본값: 1): ").strip()
+    if not option:
+        option = "1"
+        print("기본값 '1. 단일 기획서 파일'이 선택되었습니다.")
+
     # 섹션 선택
     selected_sections = select_sections()
     
@@ -513,17 +542,36 @@ def main():
                 print(f"기본 디렉토리가 생성되었습니다: {default_new_dir}")
             return
         
-        file_pattern = input("처리할 파일 패턴을 입력하세요 (예: *.txt, 기본값: *.txt): ").strip() or "*.txt"
-        file_paths = glob.glob(os.path.join(directory, file_pattern))
+        # 파일 패턴 입력 부분에서
+        file_pattern = input("처리할 파일 패턴을 입력하세요 (예: *.txt, *.md, 기본값: *.txt,*.md): ").strip()
+        if not file_pattern:
+            file_pattern = "*.txt,*.md"
+            print("기본값 '*.txt,*.md'가 선택되었습니다.")
         
-        if not file_paths:
+        # 패턴에 따라 파일 찾기
+        import glob
+        files_to_process = []
+        
+        if ',' in file_pattern:
+            # 여러 패턴이 쉼표로 구분된 경우
+            patterns = [p.strip() for p in file_pattern.split(',')]
+            for pattern in patterns:
+                files_to_process.extend(glob.glob(os.path.join(directory, pattern)))
+        else:
+            # 단일 패턴
+            files_to_process = glob.glob(os.path.join(directory, file_pattern))
+        
+        # 중복 제거 및 정렬
+        files_to_process = sorted(list(set(files_to_process)))
+        
+        if not files_to_process:
             print(f"오류: 지정한 패턴과 일치하는 파일을 찾을 수 없습니다: {file_pattern}")
             return
         
-        print(f"\n{len(file_paths)}개의 파일을 처리합니다...")
+        print(f"\n{len(files_to_process)}개의 파일을 처리합니다...")
         docx_paths = []
         
-        for file_path in file_paths:
+        for file_path in files_to_process:
             docx_path = process_single_proposal(file_path, output_dir, selected_sections, use_agent_sdk)
             if docx_path:
                 docx_paths.append(docx_path)

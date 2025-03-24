@@ -62,27 +62,72 @@ class BusinessPlanAgentSystem:
             """
             비즈니스 플랜을 분석하여 누락된 정보와 개선점 식별
             """
-            sections = plan_text.split('\n\n')
             analysis = {
                 "missing_info": [],
                 "improvements": [],
                 "section_analysis": {}
             }
             
-            # 실제 구현에서는 더 정교한 분석 로직이 들어갈 것
+            # 각 섹션별 키워드 정의
+            section_keywords = {
+                "problem": ["문제", "고객 페인 포인트", "필요성", "시장 현황"],
+                "solution": ["제품", "서비스", "해결 방안", "기술", "특징"],
+                "market": ["시장 규모", "TAM", "SAM", "SOM", "성장률", "타겟 시장"],
+                "business_model": ["수익 모델", "가격", "비용 구조", "마진", "수익성"],
+                "competition": ["경쟁사", "차별점", "경쟁 우위", "진입 장벽"],
+                "team": ["팀원", "역량", "경험", "전문성"],
+                "financials": ["매출", "비용", "손익", "투자", "ROI"],
+                "scale_up": ["성장 전략", "확장성", "로드맵"]
+            }
+            
             for section in self.sections_config.get("sections", []):
                 section_id = section.get("id")
                 section_title = section.get("title")
+                required_elements = section.get("required_elements", [])
+                
+                if isinstance(required_elements[0], dict) if required_elements else False:
+                    element_names = [element.get('name', '') for element in required_elements]
+                else:
+                    element_names = required_elements
+                
+                # 섹션별 키워드 검출 및 점수 계산
+                keyword_count = 0
+                total_keywords = len(section_keywords.get(section_id, []))
+                if total_keywords > 0:
+                    for keyword in section_keywords.get(section_id, []):
+                        if keyword.lower() in plan_text.lower():
+                            keyword_count += 1
+                    
+                    completeness = min(1.0, keyword_count / total_keywords)
+                else:
+                    completeness = 0.5  # 기본값
+                
+                # 누락된 요소 식별
+                missing = []
+                for element in element_names:
+                    element_keywords = element.lower().split()
+                    found = False
+                    for keyword in element_keywords:
+                        if len(keyword) > 3 and keyword in plan_text.lower():
+                            found = True
+                            break
+                    
+                    if not found:
+                        missing.append(element)
+                
+                # 섹션 분석 저장
                 analysis["section_analysis"][section_id] = {
                     "title": section_title,
-                    "completeness": 0.5,  # 예시 값
-                    "missing_elements": [
-                        f"{section_title}에 필요한 데이터 포인트 누락"
-                    ],
+                    "completeness": completeness,
+                    "missing_elements": missing,
                     "suggestions": [
-                        f"{section_title} 개선을 위한 제안"
-                    ]
+                        f"{element}에 대한 구체적인 정보 추가 필요" for element in missing
+                    ] if missing else ["섹션 완성도 높음"]
                 }
+                
+                # 전체 분석에 추가
+                if missing:
+                    analysis["missing_info"].append(f"{section_title}에서 {', '.join(missing)}에 대한 정보 필요")
             
             return analysis
         
@@ -248,4 +293,64 @@ class BusinessPlanAgentSystem:
         """
         동기식 인터페이스 (main.py에서 호출하기 쉽게)
         """
-        return asyncio.run(self.process_business_plan(input_text, selected_sections)) 
+        return asyncio.run(self.process_business_plan(input_text, selected_sections))
+    
+    def run_with_mode(self, input_text: str, mode: str = "analyze", selected_sections: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        다양한 모드로 입력 처리
+        
+        Args:
+            input_text: 원본 기획서 텍스트
+            mode: "raw" (원본 그대로), "summarize" (요약) 또는 "analyze" (분석)
+            selected_sections: 처리할 섹션 목록
+            
+        Returns:
+            처리된 결과
+        """
+        if mode == "raw" or mode == "summarize":
+            return asyncio.run(self.process_proposal_content(input_text, mode))
+        else:
+            return asyncio.run(self.process_business_plan(input_text, selected_sections))
+    
+    async def process_proposal_content(self, input_text: str, mode: str = "summarize") -> Dict[str, Any]:
+        """
+        proposals 내용 처리
+        
+        Args:
+            input_text: 원본 기획서 텍스트
+            mode: "raw" (원본 그대로) 또는 "summarize" (요약)
+        
+        Returns:
+            처리된 결과
+        """
+        if mode == "raw":
+            # 원본 내용 그대로 반환
+            return {
+                "final_output": input_text,
+                "sections": self._extract_sections_from_output(input_text)
+            }
+        
+        # 요약 모드: Agent를 사용하여 내용 요약
+        instructions = """
+        당신은 비즈니스 기획서 요약 전문가입니다. 
+        제공된 기획서 텍스트를 분석하고, 핵심 내용을 누락 없이 요약해주세요.
+        원본의 주요 아이디어, 비즈니스 모델, 시장 분석, 차별점 등 중요 정보를 
+        모두 포함해야 합니다.
+        요약은 원본의 구조를 유지하되, 간결하게 작성해주세요.
+        """
+        
+        summarizer_agent = Agent(
+            name="기획서 요약가",
+            instructions=instructions
+        )
+        
+        result = await Runner.run(
+            summarizer_agent,
+            input=input_text,
+            max_turns=3
+        )
+        
+        return {
+            "final_output": result.final_output,
+            "sections": self._extract_sections_from_output(result.final_output)
+        } 
